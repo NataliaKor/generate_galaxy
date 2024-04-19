@@ -2,7 +2,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-import cupy as xp
+#import cupy as xp
 import scipy.constants as sc
 import scipy.interpolate 
 from astropy import constants as const
@@ -11,7 +11,7 @@ from pygaia.astrometry.coordinates import CoordinateTransformation, Transformati
 
 from tqdm import tqdm
 
-from gbgpu.gbgpu import GBGPU
+#from gbgpu.gbgpu import GBGPU
 from gbgpu.utils.constants import *
 
 from noisemodel import *
@@ -22,6 +22,10 @@ from matplotlib import rc
 rc('font',**{'family':'serif','serif':['TX Times']})
 rc('text', usetex=True)
 import corner
+
+import time
+
+start_time = time.time() 
 
 '''
  Total number of GBs in LISA frequency band
@@ -36,7 +40,7 @@ print('N = ', N)
 # THIS HAS TO BE REMOVED FOR DATA GENERATION
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # Redefine N for testing
-N = 10000 #500000
+N = 5000000 #500000
 
 
 '''
@@ -226,78 +230,19 @@ plt.savefig('parameters.png')
 '''
 Sample remaining parameters
 '''
-iota_cos = xp.random.uniform(-1.0, 1.0, N)
-iota = xp.arccos(iota_cos)
-phi0 = xp.random.uniform(0.0, 2.0 * xp.pi, N)  # np.pi
-psi =  xp.random.uniform( xp.pi, 2.0 * xp.pi, N)    # np.pi
+iota_cos = np.random.uniform(-1.0, 1.0, N)
+iota = np.arccos(iota_cos)
+phi0 = np.random.uniform(0.0, 2.0 * np.pi, N)  # np.pi
+psi =  np.random.uniform( np.pi, 2.0 * np.pi, N)    # np.pi
 
 '''
 Generate wavforms for all parameters.
 What is the largest batch of data that I can create?
 '''
-parameters_waveform = xp.array([xp.asarray(Amp), xp.asarray(f), xp.asarray(fdot), xp.zeros(f.shape), phi0, iota, psi, xp.asarray(lam), xp.asarray(beta)])
+parameters_waveform = np.array([np.asarray(Amp), np.asarray(f), np.asarray(fdot), np.zeros(f.shape), phi0, iota, psi, np.asarray(lam), np.asarray(beta)])
+print('parameters_waveform.shape = ', parameters_waveform.shape)
+np.save('galaxy.npy', parameters_waveform)
 
-dt = 10.0
-Tobs = 1.0*YEAR
-num = 128
-gb = GBGPU(use_gpu=True)        
-gb.run_wave(*parameters_waveform, N = num, dt = dt, T = Tobs, oversample=2)
+end_time = time.time()
 
-wf_A = gb.A
-wf_E = gb.E
-
-print(wf_A.shape)
-
-# I have to pad them with zeros to put them in a corresponding relative position to each other.
-
-'''
-Add them all together
-'''
-#wf_A_all = xp.sum(wf_A, axis = 0)
-#wf_E_all = xp.sum(wf_E, axis = 0)
-
-'''
-Generate noise from the PSD.
-'''
-# Frequencies from 1e-5 to 
-df = 1./Tobs
-#freq_min = 1e-4
-#kmin = xp.floor(freq_min/dt).astype(int)
-freq_max = 1./(2.*dt)
-kmax = xp.floor(freq_max/df).astype(int)
-freqs = xp.arange(kmax)*df
-
-i_start = gb.start_inds.get().astype(int)
-i_end   = (gb.start_inds.get() + gb.N).astype(int)
-
-noise = AnalyticNoise(freqs, 'MRDv1')
-noisevals_A, noisevals_E = noise.psd(option="A"), noise.psd(option="E")
-     
-noiseA = sample_noise(noisevals_A, df)
-noiseE = sample_noise(noisevals_E, df)
-
-'''
-Add the noise to the signal, final realisation of the Galaxy
-'''
-
-xA_all = xp.zeros(freqs.shape, dtype = xp.complex128)
-xE_all = xp.zeros(freqs.shape, dtype = xp.complex128)
-for i in range(N):
-    xA = xp.zeros(freqs.shape, dtype = xp.complex128)
-    xE = xp.zeros(freqs.shape, dtype = xp.complex128)
-
-    xA[i_start[i]:i_end[i]] = gb.A[i,:]
-    xE[i_start[i]:i_end[i]] = gb.E[i,:]
-    xA_all = xA_all + xA
-    xE_all = xE_all + xE
-
-
-xA_all = xA_all + noiseA  
-xE_all = xE_all + noiseE
-
-# Plot the spectrum of the data
-print('df = ', df)
-plt.figure()
-plt.loglog(2.0*df*((xp.abs(xA_all)).get())**2)
-plt.loglog(noisevals_A.get())
-plt.savefig('spec_A.png')
+print(end_time - start_time)
